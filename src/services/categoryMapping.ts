@@ -4,24 +4,25 @@ export interface CategoryMappingResult {
 }
 
 const GENERAL_CATEGORY_MAP: Record<string, string> = {
-  FOOD_AND_BEVERAGE: 'Dining Out',
-  GROCERY: 'Groceries',
+  FOOD_AND_BEVERAGE: 'Food',
+  GROCERY: 'Food',
   TRANSPORTATION: 'Transport',
-  ENTERTAINMENT: 'Entertainment',
-  UTILITIES: 'Bills & Utilities',
-  SHOPPING: 'Shopping',
-  HEALTHCARE: 'Health',
+  ENTERTAINMENT: 'Other',
+  UTILITIES: 'Other',
+  SHOPPING: 'Other',
+  HEALTHCARE: 'Other',
 };
 
 const MERCHANT_KEYWORD_MAP: Record<string, string> = {
-  STARBUCKS: 'Dining Out',
-  MCDONALDS: 'Dining Out',
+  STARBUCKS: 'Food',
+  MCDONALDS: 'Food',
   UBER: 'Transport',
-  WALGREENS: 'Health',
-  AMAZON: 'Shopping',
+  GRAB: 'Transport',
+  WALGREENS: 'Other',
+  AMAZON: 'Other',
 };
 
-const UNCATEGORIZED = 'Uncategorized';
+const UNCATEGORIZED = 'Other';
 
 export function mapBankCategory(bankCategory: string, _merchantName: string): CategoryMappingResult {
   const normalized = bankCategory.toUpperCase();

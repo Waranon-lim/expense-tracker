@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Expenses</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main>
+    <header class="top">
+      <h1>Expenses</h1>
+      <div class="top-actions">
+        <span id="status" class="status" role="status"></span>
+        <button id="refresh-btn" class="icon-btn" type="button" title="Refresh now" aria-label="Refresh now">&#8635;</button>
+        <button id="simulate-btn" class="btn" type="button">Simulate payment</button>
+      </div>
+    </header>
+
+    <section class="overview" aria-labelledby="overview-amount">
+      <div>
+        <p id="overview-amount" class="overview-amount">&ndash;</p>
+        <p id="overview-sentence" class="overview-sentence">Loading…</p>
+      </div>
+      <div id="range-tabs" class="range-tabs" role="group" aria-label="Time range">
+        <button class="range-tab" data-range="day" type="button">Day</button>
+        <button class="range-tab" data-range="week" type="button">Week</button>
+        <button class="range-tab" data-range="month" type="button">Month</button>
+        <button class="range-tab" data-range="six_months" type="button">6 months</button>
+        <button class="range-tab" data-range="year" type="button">Year</button>
+      </div>
+    </section>
+
+    <section id="pending-lane" class="lane" aria-labelledby="lane-title" hidden>
+      <h2 id="lane-title">Needs a tap</h2>
+      <p class="lane-hint">Pick a category before the bar runs out. Otherwise it files under the suggestion.</p>
+      <div id="pending-list" class="pending-list"></div>
+    </section>
+
+    <section class="charts" aria-label="Spending charts">
+      <figure class="chart">
+        <figcaption id="time-chart-title">Spending over time</figcaption>
+        <div id="time-chart" class="time-chart"></div>
+      </figure>
+      <figure class="chart">
+        <figcaption>Where it went</figcaption>
+        <div id="category-chart" class="category-chart"></div>
+      </figure>
+    </section>
+
+    <section class="ledger-section" aria-labelledby="ledger-title">
+      <div class="ledger-head">
+        <h2 id="ledger-title">Payments</h2>
+        <button id="export-btn" class="link-btn" type="button">Download CSV</button>
+      </div>
+
+      <div class="filters-row">
+        <input type="search" id="search-input" class="search-input" placeholder="Search merchant" aria-label="Search merchant" autocomplete="off" />
+        <select id="category-select" class="category-select" aria-label="Filter by category">
+          <option value="">All categories</option>
+        </select>
+        <button id="manage-categories-toggle" class="btn-quiet" type="button" aria-expanded="false">Manage categories</button>
+      </div>
+      <div id="manage-categories" class="manage-categories"></div>
+
+      <div id="expense-list" class="ledger"></div>
+      <p id="empty-message" class="empty-state" hidden>No payments match these filters. Try a longer time range or clear the search.</p>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

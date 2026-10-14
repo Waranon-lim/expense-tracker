@@ -1,19 +1,20 @@
+import path from 'node:path';
 import express from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import dotenv from 'dotenv';
 
 import { verifyWebhookSignature, type RawBodyRequest } from './middleware/verifyWebhookSignature';
 import { webhookRouter } from './routes/webhook';
 import { expensesRouter } from './routes/expenses';
+import { categoriesRouter } from './routes/categories';
 import { pool } from './db/pool';
+import { categorizationTimeoutMs } from './constants';
 import { startCategorizationSweep } from './jobs/categorizationSweep';
 
 dotenv.config();
 
 const app = express();
 
-const CATEGORIZATION_TIMEOUT_MS = process.env.CATEGORIZATION_TIMEOUT_MS
-  ? Number(process.env.CATEGORIZATION_TIMEOUT_MS)
-  : 30_000;
 const CATEGORIZATION_SWEEP_INTERVAL_MS = process.env.CATEGORIZATION_SWEEP_INTERVAL_MS
   ? Number(process.env.CATEGORIZATION_SWEEP_INTERVAL_MS)
   : 5_000;
@@ -32,6 +33,23 @@ app.get('/health', (_req, res) => {
 
 app.use('/api/webhooks', verifyWebhookSignature, webhookRouter);
 app.use('/api/expenses', expensesRouter);
+app.use('/api/categories', categoriesRouter);
+app.use(express.static(path.join(__dirname, '..', 'public')));
+
+// Catches errors forwarded by asyncHandler (and anything Express itself
+// throws synchronously) so a bad request or DB hiccup returns a JSON 500
+// instead of crashing the process or falling through to Express's default
+// HTML error page. Must be registered last, and must keep all 4 params for
+// Express to recognize it as an error handler.
+app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  console.error('Unhandled request error:', err);
+  if (res.headersSent) {
+    return;
+  }
+  res.status(500).json({ error: 'Internal error' });
+});
+
+const CATEGORIZATION_TIMEOUT_MS = categorizationTimeoutMs();
 
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
 

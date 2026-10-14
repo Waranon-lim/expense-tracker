@@ -23,8 +23,8 @@ function buildPayload(overrides: Record<string, unknown> = {}) {
   return {
     transaction_id: `txn_${crypto.randomUUID()}`,
     user_id: 'usr_demo_1',
-    amount: 4.75,
-    currency: 'USD',
+    amount: 120,
+    currency: 'THB',
     merchant_name: 'STARBUCKS STORE 101',
     bank_category: 'STARBUCKS_STORE_101',
     timestamp: new Date().toISOString(),
@@ -116,7 +116,7 @@ async function main() {
 
   if (mode === 'tap') {
     await sleep(1000);
-    await tapCategory(body.expense_id, 'Coffee Run');
+    await tapCategory(body.expense_id, 'Food');
     await getExpense(body.expense_id);
     return;
   }
