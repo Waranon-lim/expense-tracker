@@ -1,36 +1,19 @@
-/* Palette: thermal-slip paper, ink, Bangkok taxi pink (pending) and BTS green (settled). */
+/* Palette: sand paper, aubergine ink, marigold bars, chili-red for "needs a tap", leaf green for settled.
+   (--pink names are kept for the pending accent; its value is now chili red.) */
 :root {
-  --paper: #f2f4f6;
-  --surface: #ffffff;
-  --ink: #18202d;
-  --muted: #6b7686;
-  --line: #dfe3e8;
-  --line-strong: #c7ced6;
-  --pink: #ee3f79;
-  --pink-soft: #fde8ef;
-  --green: #1e8a5c;
-  --amber: #b97a0b;
-  --bar: #2b3a52;
-  --bar-hover: #ee3f79;
+  --paper: #f6efe6;
+  --surface: #fffbf6;
+  --ink: #2a1b2d;
+  --muted: #7a6a68;
+  --line: #e7dccf;
+  --line-strong: #d3c4b3;
+  --pink: #d93a4a;
+  --pink-soft: #fbe3df;
+  --green: #2f7d4f;
+  --amber: #c77a0a;
+  --bar: #c77a0a;
+  --bar-hover: #d93a4a;
   --focus: #2563eb;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --paper: #121a26;
-    --surface: #1a2433;
-    --ink: #eef1f5;
-    --muted: #94a0b2;
-    --line: #2a3548;
-    --line-strong: #3a475d;
-    --pink: #ff6b98;
-    --pink-soft: #3a1f2b;
-    --green: #4cc38a;
-    --amber: #f0b13a;
-    --bar: #8fa3c4;
-    --bar-hover: #ff6b98;
-    --focus: #7aa7ff;
-  }
 }
 
 * { box-sizing: border-box; }
@@ -208,3 +191,32 @@ button:disabled { cursor: default; opacity: 0.5; }
 
 button.cat-row { background: none; border: 0; padding: 0; text-align: left; width: 100%; }
 button.cat-row.filterable:hover .cat-name { text-decoration: underline; }
+
+.change-btn { font-size: 0.8rem; }
+.change-pills { display: none; flex-basis: 100%; flex-wrap: wrap; gap: 6px; padding-top: 4px; }
+.change-pills.visible { display: flex; }
+.expense-row { flex-wrap: wrap; }
+
+.learned-rules { display: none; padding: 0 0 12px; }
+.learned-rules.visible { display: block; }
+.learned-rules h3 { font-size: 0.85rem; font-weight: 600; margin: 8px 0 6px; }
+.rule-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--line); font-size: 0.88rem; }
+.rule-shop { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rule-arrow { color: var(--muted); }
+.rule-cat { display: inline-flex; align-items: center; gap: 6px; }
+
+/* Recycled list: fixed viewport, rows absolutely positioned by JS. */
+.ledger { overflow-y: auto; position: relative; overscroll-behavior: contain; border-bottom: 1px solid var(--line); }
+.v-spacer { position: relative; width: 100%; }
+.v-item { position: absolute; top: 0; left: 0; right: 0; }
+.day-head.v-item { margin-top: 0; padding-top: 18px; padding-bottom: 6px; }
+.expense-row.v-item { align-content: flex-start; align-items: center; }
+.expense-row.v-item .change-pills { display: flex; }
+
+/* Manage categories: one editable row per category */
+.manage-categories { flex-direction: column; align-items: stretch; gap: 8px; }
+.cat-edit-row { display: flex; align-items: center; gap: 8px; }
+.cat-color { width: 34px; height: 34px; padding: 2px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); cursor: pointer; flex: none; }
+.cat-name-input { flex: 1; min-width: 0; border: 1px solid var(--line-strong); border-radius: 8px; padding: 6px 10px; background: var(--surface); }
+.cat-name-input[readonly] { background: transparent; border-color: transparent; color: var(--muted); }
+.cat-save { padding: 6px 14px; }

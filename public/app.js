@@ -112,6 +112,7 @@ const overviewSentenceEl = $('overview-sentence');
 const timeChartEl = $('time-chart');
 const timeChartTitleEl = $('time-chart-title');
 const categoryChartEl = $('category-chart');
+const learnedRulesEl = $('learned-rules');
 
 let currentRange = 'day';
 let currentCategory = '';
@@ -120,6 +121,7 @@ let searchDebounceTimer = null;
 let lastExpenses = [];
 let previousPendingIds = new Set();
 let lastChartSig = '';
+let lastSettled = [];
 
 // Expense ids with an open "Custom" input. While any are open we skip
 // re-rendering the lists on the periodic refresh, otherwise the innerHTML
@@ -219,7 +221,7 @@ function renderPendingCard(expense, timing) {
       <span class="merchant">${escapeHtml(expense.merchant)}</span>
       <span class="amount">&minus;${formatAmount(expense)}</span>
     </div>
-    <div class="pending-sub">Files as <b>${escapeHtml(expense.suggested_category)}</b> in
+    <div class="pending-sub">${expense.suggestion_source === 'learned' ? 'You usually pick' : 'Files as'} <b>${escapeHtml(expense.suggested_category)}</b> · files in
       <span class="seconds" data-expires="${expiresAt}">${Math.ceil(remainingMs / 1000)}s</span></div>
     <div class="tap-ui">${pills}<button class="category-pill" data-id="${expense.id}" data-category="${CUSTOM_PILL}" type="button">Custom…</button></div>
     <div class="custom-category-form" data-id="${expense.id}">
@@ -298,42 +300,199 @@ function tickCountdownText() {
   setTimeout(tickCountdownText, 1000);
 }
 
-// ---------- ledger ----------
+// ---------- ledger (recycled / virtualized list) ----------
+//
+// Like Android's RecyclerView: the list has a fixed-height scroll viewport and
+// only the rows that are on screen (plus a small buffer) exist in the DOM.
+// Scrolling doesn't create new elements; it re-binds the same few "view
+// holders" to different data. Each item has a known height, so we can compute
+// every item's offset up front and find the visible range with a binary search.
 
-function renderRow(expense) {
-  const color = colorFor(expense.category);
-  const row = document.createElement('div');
-  row.className = 'expense-row';
-  if (previousPendingIds.has(String(expense.id))) row.classList.add('just-settled');
-  row.innerHTML = `
-    <div class="expense-main">
-      <div class="merchant">${escapeHtml(expense.merchant)}</div>
-      <div class="meta-row"><span class="dot" style="background:${color}"></span>${escapeHtml(expense.category)}
-        <span aria-hidden="true">&middot;</span> ${formatTime(expense.received_at)}</div>
-    </div>
-    <div class="expense-amount">&minus;${formatAmount(expense)}</div>
-  `;
-  return row;
-}
+const HEAD_H = 44;
+const ROW_H = 62;
+const EXPANDED_EXTRA_H = 46; // room for the "Change" category buttons
+const BUFFER_PX = 240; // render this far above/below the viewport
+const MAX_VIEWPORT_PX = 560;
 
-function renderLedger(settled) {
-  listEl.innerHTML = '';
-  let currentDay = null;
-  let dayTotals = new Map();
+let ledgerItems = []; // [{type:'head'|'row', key, height, ...}]
+let ledgerOffsets = []; // top offset of each item
+let ledgerTotalH = 0;
+let expandedRowId = null; // which payment's "Change" menu is open
+const activeNodes = new Map(); // item index -> bound DOM node
+const nodePool = []; // recycled nodes waiting to be re-bound
+
+const spacerEl = document.createElement('div');
+spacerEl.className = 'v-spacer';
+listEl.appendChild(spacerEl);
+
+function buildLedgerItems(settled, settledNowIds) {
+  const dayTotals = new Map();
   for (const e of settled) {
     const key = bangkokDayKey(e.received_at);
     dayTotals.set(key, (dayTotals.get(key) ?? 0) + Number(e.amount));
   }
-  for (const expense of settled) {
-    const key = bangkokDayKey(expense.received_at);
-    if (key !== currentDay) {
-      currentDay = key;
-      const head = document.createElement('div');
-      head.className = 'day-head';
-      head.innerHTML = `<span>${formatDayHeading(key)}</span><span>${formatBaht(dayTotals.get(key))}</span>`;
-      listEl.appendChild(head);
+  const items = [];
+  let currentDay = null;
+  for (const e of settled) {
+    const day = bangkokDayKey(e.received_at);
+    if (day !== currentDay) {
+      currentDay = day;
+      items.push({ type: 'head', key: `h-${day}`, height: HEAD_H, label: formatDayHeading(day), total: formatBaht(dayTotals.get(day)) });
     }
-    listEl.appendChild(renderRow(expense));
+    const expanded = String(e.id) === expandedRowId;
+    items.push({
+      type: 'row',
+      key: `r-${e.id}`,
+      height: ROW_H + (expanded ? EXPANDED_EXTRA_H : 0),
+      expense: e,
+      expanded,
+      settledNow: settledNowIds.has(String(e.id)),
+    });
+  }
+  return items;
+}
+
+function bindNode(node, item) {
+  // Skip the rebuild when nothing visible changed, so a 3s background refresh
+  // doesn't wipe hover/focus state on the rows.
+  const sig =
+    item.type === 'head'
+      ? `${item.label}|${item.total}`
+      : `${item.key}|${item.expanded}|${item.expense.category}|${item.expense.amount}|${allCategories.map((c) => c.name).join(',')}`;
+  node.style.height = `${item.height}px`;
+  if (node.dataset.sig === sig) return;
+  node.dataset.sig = sig;
+
+  if (item.type === 'head') {
+    node.className = 'v-item day-head';
+    node.innerHTML = `<span>${item.label}</span><span>${item.total}</span>`;
+    return;
+  }
+  const e = item.expense;
+  node.className = `v-item expense-row${item.settledNow ? ' just-settled' : ''}`;
+  node.innerHTML = `
+    <div class="expense-main">
+      <div class="merchant">${escapeHtml(e.merchant)}</div>
+      <div class="meta-row"><span class="dot" style="background:${colorFor(e.category)}"></span>${escapeHtml(e.category)}
+        <span aria-hidden="true">&middot;</span> ${formatTime(e.received_at)}</div>
+    </div>
+    <div class="expense-amount">&minus;${formatAmount(e)}</div>
+    <button class="link-btn change-btn" data-id="${e.id}" type="button" aria-expanded="${item.expanded}">Change</button>
+    ${
+      item.expanded
+        ? `<div class="change-pills" data-id="${e.id}">${allCategories
+            .filter((c) => c.name !== e.category)
+            .map((c) => `<button class="category-pill" data-category="${escapeHtml(c.name)}" type="button"><span class="dot" style="background:${c.color}"></span>${escapeHtml(c.name)}</button>`)
+            .join('')}</div>`
+        : ''
+    }`;
+}
+
+// First item whose bottom edge is below `y` (binary search over the offsets).
+function firstItemAt(y) {
+  let lo = 0;
+  let hi = ledgerItems.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (ledgerOffsets[mid] + ledgerItems[mid].height <= y) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+function layoutLedger() {
+  const viewH = listEl.clientHeight;
+  const scrollTop = listEl.scrollTop;
+  const first = ledgerItems.length ? firstItemAt(Math.max(0, scrollTop - BUFFER_PX)) : 0;
+  const wanted = new Set();
+  for (let i = first; i < ledgerItems.length && ledgerOffsets[i] < scrollTop + viewH + BUFFER_PX; i++) {
+    wanted.add(i);
+  }
+
+  // Recycle: nodes whose item scrolled out of range go back to the pool.
+  for (const [i, node] of activeNodes) {
+    if (!wanted.has(i)) {
+      node.remove();
+      activeNodes.delete(i);
+      nodePool.push(node);
+    }
+  }
+  // Bind: in-range items reuse an existing node, or take one from the pool.
+  for (const i of wanted) {
+    let node = activeNodes.get(i);
+    if (!node) {
+      node = nodePool.pop() ?? document.createElement('div');
+      node.dataset.sig = ''; // a recycled node holds another item's content
+      activeNodes.set(i, node);
+      spacerEl.appendChild(node);
+    }
+    bindNode(node, ledgerItems[i]);
+    node.style.transform = `translateY(${ledgerOffsets[i]}px)`;
+  }
+}
+
+let layoutQueued = false;
+listEl.addEventListener('scroll', () => {
+  if (layoutQueued) return;
+  layoutQueued = true;
+  requestAnimationFrame(() => {
+    layoutQueued = false;
+    layoutLedger();
+  });
+});
+
+function renderLedger(settled, settledNowIds = new Set()) {
+  ledgerItems = buildLedgerItems(settled, settledNowIds);
+  let y = 0;
+  ledgerOffsets = ledgerItems.map((item) => {
+    const top = y;
+    y += item.height;
+    return top;
+  });
+  ledgerTotalH = y;
+  spacerEl.style.height = `${ledgerTotalH}px`;
+  listEl.style.height = `${Math.min(ledgerTotalH, MAX_VIEWPORT_PX, Math.round(window.innerHeight * 0.7))}px`;
+  // Item order/heights may have changed, so every bound node is stale.
+  for (const node of activeNodes.values()) node.dataset.sig = '';
+  layoutLedger();
+}
+
+// One delegated listener instead of one per row: rows are recycled, so
+// handlers attached to a specific node would end up on the wrong payment.
+listEl.addEventListener('click', (e) => {
+  const changeBtn = e.target.closest('.change-btn');
+  if (changeBtn) {
+    expandedRowId = expandedRowId === changeBtn.dataset.id ? null : changeBtn.dataset.id;
+    renderLedger(lastSettled);
+    return;
+  }
+  const pill = e.target.closest('.change-pills .category-pill');
+  if (pill) {
+    const row = pill.closest('.expense-row');
+    changeCategory(pill.closest('.change-pills').dataset.id, pill.dataset.category, row);
+  }
+});
+
+async function changeCategory(id, category, rowEl) {
+  expandedRowId = null;
+  rowEl.querySelectorAll('button').forEach((el) => {
+    el.disabled = true;
+  });
+  try {
+    const res = await apiKeyFetch(`/api/expenses/${id}/category`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category }),
+    });
+    if (!res.ok) throw new Error(`Change failed: ${res.status}`);
+    statusEl.textContent = `Changed to ${category}. Future payments from this shop will follow.`;
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = 'Could not change the category. Check the API key and try again.';
+  } finally {
+    lastChartSig = ''; // force chart redraw: category totals changed
+    await refreshCategories();
+    await refresh();
   }
 }
 
@@ -348,7 +507,9 @@ function renderLists(expenses, timing) {
   for (const e of pending) pendingListEl.appendChild(renderPendingCard(e, timing));
   wirePendingEvents();
 
-  renderLedger(settled);
+  const settledNowIds = new Set([...previousPendingIds].filter((id) => settled.some((e) => String(e.id) === id)));
+  lastSettled = settled;
+  renderLedger(settled, settledNowIds);
   emptyMessageEl.hidden = expenses.length > 0;
 
   previousPendingIds = new Set(pending.map((e) => String(e.id)));
@@ -573,20 +734,119 @@ async function refreshCategories() {
     currentCategory = exists ? previousValue : '';
 
     renderManageCategories();
+    refreshRules();
   } catch (err) {
     console.error(err);
   }
 }
 
+async function refreshRules() {
+  try {
+    const res = await fetch('/api/rules');
+    if (!res.ok) return;
+    renderRules(await res.json());
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+function renderRules(rules) {
+  if (rules.length === 0) {
+    learnedRulesEl.innerHTML = '<h3>Learned from your choices</h3><p class="lane-hint">Nothing yet. Pick a category on a payment and the app will remember it for that shop.</p>';
+    return;
+  }
+  learnedRulesEl.innerHTML = `<h3>Learned from your choices</h3>${rules
+    .map(
+      (r) => `<div class="rule-row"><span class="rule-shop">${escapeHtml(r.merchant_key)}</span>
+        <span class="rule-arrow" aria-hidden="true">&rarr;</span>
+        <span class="rule-cat"><span class="dot" style="background:${colorFor(r.category)}"></span>${escapeHtml(r.category)}</span>
+        <button class="category-chip-delete" data-key="${escapeHtml(r.merchant_key)}" type="button" aria-label="Forget ${escapeHtml(r.merchant_key)}" title="Forget this rule">&times;</button></div>`,
+    )
+    .join('')}`;
+  learnedRulesEl.querySelectorAll('.category-chip-delete').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        const res = await apiKeyFetch(`/api/rules/${encodeURIComponent(btn.dataset.key)}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+        await refreshRules();
+        await refresh();
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = 'Could not forget that rule.';
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
+// The color picker only understands #rrggbb, but older custom categories are
+// stored as hsl(...). Letting a canvas parse the CSS color converts any of them.
+function toHex(cssColor) {
+  const ctx = document.createElement('canvas').getContext('2d');
+  ctx.fillStyle = '#000000';
+  ctx.fillStyle = cssColor;
+  return ctx.fillStyle.startsWith('#') ? ctx.fillStyle : '#64748b';
+}
+
 function renderManageCategories() {
+  // Don't rebuild the panel under someone who is typing in it.
+  if (manageCategoriesEl.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') return;
+
   manageCategoriesEl.innerHTML = allCategories
     .map((c) => {
       const del = c.is_default
         ? ''
         : `<button class="category-chip-delete" data-id="${c.id}" type="button" title="Delete ${escapeHtml(c.name)}" aria-label="Delete category ${escapeHtml(c.name)}">&times;</button>`;
-      return `<span class="category-chip" data-name="${escapeHtml(c.name)}"><span class="dot" style="background:${c.color}"></span>${escapeHtml(c.name)}${del}</span>`;
+      const lockNote = c.is_default ? ' title="Built-in categories can be recolored but not renamed"' : '';
+      return `<div class="cat-edit-row" data-id="${c.id}" data-name="${escapeHtml(c.name)}" data-color="${toHex(c.color)}">
+        <input type="color" class="cat-color" value="${toHex(c.color)}" aria-label="Color for ${escapeHtml(c.name)}" />
+        <input type="text" class="cat-name-input" value="${escapeHtml(c.name)}" maxlength="40" aria-label="Name" ${c.is_default ? 'readonly' : ''}${lockNote} />
+        <button class="btn cat-save" type="button" disabled>Save</button>
+        ${del}
+      </div>`;
     })
     .join('');
+
+  manageCategoriesEl.querySelectorAll('.cat-edit-row').forEach((row) => {
+    const nameInput = row.querySelector('.cat-name-input');
+    const colorInput = row.querySelector('.cat-color');
+    const saveBtn = row.querySelector('.cat-save');
+    const markDirty = () => {
+      const changed = nameInput.value.trim() !== row.dataset.name || colorInput.value !== row.dataset.color;
+      saveBtn.disabled = !changed || nameInput.value.trim() === '';
+    };
+    nameInput.addEventListener('input', markDirty);
+    colorInput.addEventListener('input', markDirty);
+    nameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !saveBtn.disabled) saveBtn.click();
+    });
+    saveBtn.addEventListener('click', async () => {
+      saveBtn.disabled = true;
+      const body = { color: colorInput.value };
+      if (nameInput.value.trim() !== row.dataset.name) body.name = nameInput.value.trim();
+      try {
+        const res = await apiKeyFetch(`/api/categories/${row.dataset.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error ?? `Save failed: ${res.status}`);
+        }
+        statusEl.textContent = `Saved ${nameInput.value.trim()}`;
+        document.activeElement?.blur();
+        lastChartSig = ''; // names/colors changed, so redraw the charts
+        await refreshCategories();
+        await refresh();
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = err.message;
+        saveBtn.disabled = false;
+      }
+    });
+  });
 
   manageCategoriesEl.querySelectorAll('.category-chip-delete').forEach((btn) => {
     btn.addEventListener('click', async () => {
@@ -667,6 +927,7 @@ categorySelectEl.addEventListener('change', () => {
 
 manageCategoriesToggleEl.addEventListener('click', () => {
   const open = manageCategoriesEl.classList.toggle('visible');
+  learnedRulesEl.classList.toggle('visible', open);
   manageCategoriesToggleEl.setAttribute('aria-expanded', String(open));
 });
 
@@ -707,3 +968,82 @@ function scheduleRefresh() {
 refreshCategories().then(refresh);
 scheduleRefresh();
 tickCountdownText();
+
+
+// ---------- phone notifications (Web Push) ----------
+
+const notifyBtnEl = $('notify-btn');
+
+// The browser wants the server's public key as bytes, not base64 text.
+function urlBase64ToUint8Array(base64) {
+  const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+  const raw = atob(padded.replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+}
+
+async function setupNotifications() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !window.isSecureContext) return;
+  let reg;
+  try {
+    reg = await navigator.serviceWorker.register('/sw.js');
+    await navigator.serviceWorker.ready;
+  } catch (err) {
+    console.error('Service worker failed:', err);
+    return;
+  }
+  notifyBtnEl.hidden = false;
+
+  const paint = async () => {
+    const sub = await reg.pushManager.getSubscription();
+    const on = Boolean(sub) && Notification.permission === 'granted';
+    notifyBtnEl.textContent = on ? 'Phone alerts: on' : 'Turn on phone alerts';
+    notifyBtnEl.setAttribute('aria-pressed', String(on));
+    return sub;
+  };
+  await paint();
+
+  notifyBtnEl.addEventListener('click', async () => {
+    notifyBtnEl.disabled = true;
+    try {
+      const existing = await reg.pushManager.getSubscription();
+      if (existing && Notification.permission === 'granted') {
+        await apiKeyFetch('/api/push/unsubscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ endpoint: existing.endpoint }),
+        });
+        await existing.unsubscribe();
+        statusEl.textContent = 'Phone alerts are off.';
+      } else {
+        // Must be asked from a click, which is why this lives in the handler.
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+          statusEl.textContent = 'Notifications are blocked. Allow them in the browser’s site settings.';
+          return;
+        }
+        const keyRes = await fetch('/api/push/public-key');
+        if (!keyRes.ok) throw new Error('Server has no push keys configured');
+        const { key } = await keyRes.json();
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(key),
+        });
+        const res = await apiKeyFetch('/api/push/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(sub.toJSON()),
+        });
+        if (!res.ok) throw new Error(`Subscribe failed: ${res.status}`);
+        statusEl.textContent = 'Phone alerts are on. New payments will pop up on this device.';
+      }
+    } catch (err) {
+      console.error(err);
+      statusEl.textContent = `Could not change phone alerts: ${err.message}`;
+    } finally {
+      await paint();
+      notifyBtnEl.disabled = false;
+    }
+  });
+}
+
+setupNotifications();

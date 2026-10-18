@@ -7,6 +7,8 @@ import { verifyWebhookSignature, type RawBodyRequest } from './middleware/verify
 import { webhookRouter } from './routes/webhook';
 import { expensesRouter } from './routes/expenses';
 import { categoriesRouter } from './routes/categories';
+import { rulesRouter } from './routes/rules';
+import { pushRouter } from './routes/push';
 import { pool } from './db/pool';
 import { categorizationTimeoutMs } from './constants';
 import { startCategorizationSweep } from './jobs/categorizationSweep';
@@ -34,6 +36,8 @@ app.get('/health', (_req, res) => {
 app.use('/api/webhooks', verifyWebhookSignature, webhookRouter);
 app.use('/api/expenses', expensesRouter);
 app.use('/api/categories', categoriesRouter);
+app.use('/api/rules', rulesRouter);
+app.use('/api/push', pushRouter);
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // Catches errors forwarded by asyncHandler (and anything Express itself

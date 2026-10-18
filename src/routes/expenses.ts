@@ -2,12 +2,13 @@ import crypto from 'node:crypto';
 import { Router } from 'express';
 import { pool } from '../db/pool';
 import { CategorizeRequestSchema } from '../validation/categorizeSchema';
-import { finalizeCategory } from '../services/categorizationFinalizer';
-import { mapBankCategory } from '../services/categoryMapping';
+import { finalizeCategory, recategorizeExpense } from '../services/categorizationFinalizer';
+import { loadMerchantRules, suggestCategory } from '../services/merchantRules';
 import { ingestTransaction } from '../services/ingestTransaction';
 import { bangkokRangeStart, bucketKeys, granularityForRange, isExpenseRange } from '../utils/bangkokTime';
 import { asyncHandler } from '../utils/asyncHandler';
 import { requireApiKey } from '../middleware/requireApiKey';
+import { verifyNotificationToken } from '../services/pushNotifications';
 import { DEMO_USER_ID, categorizationTimeoutMs } from '../constants';
 
 export const expensesRouter = Router();
@@ -111,12 +112,13 @@ expensesRouter.get(
 
     // suggested_category isn't persisted for pending rows (only computed at
     // webhook time and thrown away) so recompute it here for display.
+    const rules = await loadMerchantRules(pool, DEMO_USER_ID);
     const expenses = result.rows.map((row) => {
       if (row.status !== 'pending') {
         return row;
       }
-      const { category: suggested_category } = mapBankCategory(row.raw_bank_category, row.merchant);
-      return { ...row, suggested_category };
+      const { category: suggested_category, source } = suggestCategory(rules, row.merchant, row.raw_bank_category);
+      return { ...row, suggested_category, suggestion_source: source };
     });
 
     res.status(200).json({
@@ -225,6 +227,58 @@ expensesRouter.post(
       return;
     }
 
+    res.status(200).json({ status: 'categorized', category });
+  }),
+);
+
+// Changes the category of an already-filed expense (the "Change" link in the
+// dashboard). 404 covers both "no such expense" and "still pending" — a
+// pending one is changed through the normal tap route instead.
+expensesRouter.patch(
+  '/:id/category',
+  requireApiKey,
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      res.status(400).json({ error: 'Invalid expense id' });
+      return;
+    }
+    const parsed = CategorizeRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Invalid request', details: parsed.error.flatten() });
+      return;
+    }
+    const { applied, category } = await recategorizeExpense(pool, id, DEMO_USER_ID, parsed.data.category);
+    if (!applied) {
+      res.status(404).json({ error: 'No filed expense with that id' });
+      return;
+    }
+    res.status(200).json({ status: 'categorized', category });
+  }),
+);
+
+// Called by the phone notification's buttons (from the service worker, which has
+// no API key). Authorized instead by the per-expense token that came in the push.
+expensesRouter.post(
+  '/:id/categorize-from-notification',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const token = req.header('x-notification-token') ?? '';
+    console.log(`[push] categorize-from-notification expense=${req.params.id} tokenValid=${verifyNotificationToken(id, token)}`);
+    if (!Number.isInteger(id) || !verifyNotificationToken(id, token)) {
+      res.status(401).json({ error: 'Invalid notification token' });
+      return;
+    }
+    const parsed = CategorizeRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Invalid request' });
+      return;
+    }
+    const { applied, category } = await finalizeCategory(pool, id, parsed.data.category, 'user');
+    if (!applied) {
+      res.status(409).json({ error: 'Expense is already categorized' });
+      return;
+    }
     res.status(200).json({ status: 'categorized', category });
   }),
 );

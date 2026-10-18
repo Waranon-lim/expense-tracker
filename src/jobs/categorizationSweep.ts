@@ -1,9 +1,10 @@
 import type { Pool } from 'pg';
-import { mapBankCategory } from '../services/categoryMapping';
+import { loadMerchantRules, suggestCategory } from '../services/merchantRules';
 import { finalizeCategory } from '../services/categorizationFinalizer';
 
 interface PendingExpenseRow {
   id: number;
+  user_id: string;
   raw_bank_category: string;
   merchant: string;
 }
@@ -12,15 +13,19 @@ async function sweepOnce(pool: Pool, timeoutMs: number): Promise<void> {
   const cutoff = new Date(Date.now() - timeoutMs);
 
   const { rows } = await pool.query<PendingExpenseRow>(
-    `SELECT id, raw_bank_category, merchant
+    `SELECT id, user_id, raw_bank_category, merchant
      FROM expenses
      WHERE status = 'pending' AND received_at <= $1`,
     [cutoff],
   );
 
+  const rulesByUser = new Map<string, Map<string, string>>();
   for (const row of rows) {
-    const { category, source } = mapBankCategory(row.raw_bank_category, row.merchant);
-    const { applied } = await finalizeCategory(pool, row.id, category, source);
+    if (!rulesByUser.has(row.user_id)) rulesByUser.set(row.user_id, await loadMerchantRules(pool, row.user_id));
+    const { category, source } = suggestCategory(rulesByUser.get(row.user_id)!, row.merchant, row.raw_bank_category);
+    // The DB's category_source only allows user/default/mapping; a learned
+    // rule is still the app's own (non-tap) decision, so it files as 'mapping'.
+    const { applied } = await finalizeCategory(pool, row.id, category, source === 'default' ? 'default' : 'mapping');
     if (applied) {
       console.log(`[categorization-sweep] expense ${row.id} timed out -> "${category}" (${source})`);
     }

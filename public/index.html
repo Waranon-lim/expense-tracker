@@ -7,6 +7,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#2a1b2d" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -16,6 +19,7 @@
       <div class="top-actions">
         <span id="status" class="status" role="status"></span>
         <button id="refresh-btn" class="icon-btn" type="button" title="Refresh now" aria-label="Refresh now">&#8635;</button>
+        <button id="notify-btn" class="btn-quiet" type="button" hidden>Phone alerts</button>
         <button id="simulate-btn" class="btn" type="button">Simulate payment</button>
       </div>
     </header>
@@ -65,6 +69,7 @@
         <button id="manage-categories-toggle" class="btn-quiet" type="button" aria-expanded="false">Manage categories</button>
       </div>
       <div id="manage-categories" class="manage-categories"></div>
+      <div id="learned-rules" class="learned-rules"></div>
 
       <div id="expense-list" class="ledger"></div>
       <p id="empty-message" class="empty-state" hidden>No payments match these filters. Try a longer time range or clear the search.</p>

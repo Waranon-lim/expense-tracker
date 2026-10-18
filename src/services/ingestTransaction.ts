@@ -1,5 +1,7 @@
 import type { Pool } from 'pg';
-import { mapBankCategory } from './categoryMapping';
+import { loadMerchantRules, suggestCategory } from './merchantRules';
+import { notifyNewPayment } from './pushNotifications';
+import { categorizationTimeoutMs } from '../constants';
 
 export interface IngestTransactionParams {
   provider: string;
@@ -66,7 +68,21 @@ export async function ingestTransaction(
 
     await client.query('COMMIT');
 
-    const { category: suggestedCategory } = mapBankCategory(params.bankCategory, params.merchantName);
+    const rules = await loadMerchantRules(pool, params.userId);
+    const { category: suggestedCategory } = suggestCategory(rules, params.merchantName, params.bankCategory);
+
+    // Fire-and-forget: the payment is already saved, and a slow or failing
+    // push service must not delay (or fail) the webhook response.
+    void notifyNewPayment(pool, {
+      expenseId,
+      userId: params.userId,
+      merchant: params.merchantName,
+      amount: params.amount,
+      currency: params.currency,
+      suggestedCategory,
+      timeoutMs: categorizationTimeoutMs(),
+    });
+
     return { duplicate: false, expenseId, suggestedCategory };
   } catch (err) {
     await client.query('ROLLBACK');
