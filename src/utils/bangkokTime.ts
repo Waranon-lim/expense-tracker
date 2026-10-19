@@ -54,3 +54,14 @@ export function bucketKeys(start: Date, granularity: Granularity): string[] {
   }
   return keys;
 }
+
+// A manual expense is entered with a Bangkok calendar date (YYYY-MM-DD). Today
+// keeps the real time. A past day is stored at 12:00 Bangkok time, so it can
+// never slip into the neighbouring day in any chart bucket. A future day
+// returns null (the caller answers 400). ISO dates compare correctly as strings.
+export function resolveManualExpenseDate(dateKey: string | undefined, now: Date = new Date()): Date | null {
+  const todayKey = new Date(now.getTime() + BANGKOK_OFFSET_MS).toISOString().slice(0, 10);
+  if (dateKey === undefined || dateKey === todayKey) return now;
+  if (dateKey > todayKey) return null;
+  return new Date(`${dateKey}T12:00:00+07:00`);
+}

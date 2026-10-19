@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "migrate": "tsx scripts/migrate.ts",
-    "mock-bank": "tsx scripts/mockBank.ts"
+    "mock-bank": "tsx scripts/mockBank.ts",
+    "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
