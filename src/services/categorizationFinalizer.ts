@@ -15,7 +15,7 @@ export interface FinalizeResult {
 // e.g. "food" vs "Food") so it shows up as a quick-pick option and in the
 // filter dropdown. The categories_name_lower_idx unique index makes this
 // atomic under concurrent first-time inserts of the same name.
-async function registerCategory(client: PoolClient, rawCategory: string): Promise<string> {
+export async function registerCategory(client: PoolClient, rawCategory: string): Promise<string> {
   const trimmedCategory = rawCategory.trim();
   const result = await client.query(
     `INSERT INTO categories (name, color)
