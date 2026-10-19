@@ -26,7 +26,7 @@ The user can add an expense by hand, like in a normal expense app. The expense i
 
 ### Endpoint
 
-`POST /api/expenses` in `src/routes/expenses.ts`, registered before `/:id`.
+`POST /api/expenses` in `src/routes/expenses.ts`. It uses `requireApiKey`, like every other write route. The form sends the key with `apiKeyFetch()`.
 
 Input (zod schema in `src/validation/`):
 
@@ -34,8 +34,8 @@ Input (zod schema in `src/validation/`):
 |---|---|
 | `merchant` | Required. Trimmed. 1 to 100 characters. |
 | `amount` | Required. Greater than 0. At most 2 decimal places. |
-| `category` | Required. Trimmed. 1 to 50 characters. |
-| `date` | Optional ISO date. Default: now. Not in the future. |
+| `category` | Required. Trimmed. 1 to 40 characters (same limit as `CategorizeRequestSchema`). |
+| `date` | Optional calendar date `YYYY-MM-DD` (Bangkok). Default: today. Not in the future. |
 | `currency` | Optional. Default `THB`. Three letters. |
 
 The client does not send a user id. The server sets `user_id` to `DEMO_USER_ID` (from `src/constants.ts`), as every other expense route does.
@@ -46,8 +46,10 @@ The insert sets:
 - `category_source = 'user'`
 - `source = 'manual'`
 - `raw_bank_category = ''`
-- `transaction_date = date`
+- `transaction_date = received_at = the resolved date` (the list, charts and summary filter on `received_at`, so a backdated expense must set it too)
 - `categorized_at = now()`
+
+Date resolution: today keeps the current time. A past day is stored at 12:00 Bangkok time so it cannot slip into a neighbouring day. A future day is rejected with `400`.
 
 The category insert into `categories` (`ON CONFLICT (name) DO NOTHING`) runs in the same transaction as the expense insert.
 
@@ -59,7 +61,7 @@ A small service, `src/services/createManualExpense.ts`, holds the insert. The ro
 
 - An "Add expense" button in the header opens a form with: merchant, amount, category chips (from `allCategories`, plus a custom option), and date (default today, Bangkok time).
 - On save the form closes and the list refreshes.
-- Manual rows show a small "Manual" label.
+- Manual rows show "Manual" in place of the time in the row's second line (a past day has no real time).
 - The form sits outside the element that `renderList()` rebuilds, so the 3 second auto-refresh cannot wipe it (the Session 8 bug).
 - Errors from the API show inside the form.
 
@@ -67,6 +69,9 @@ A small service, `src/services/createManualExpense.ts`, holds the insert. The ro
 
 - Create a manual expense with `curl`: row is `categorized`, `source = 'manual'`, `category_source = 'user'`.
 - Invalid input returns `400`: amount 0, negative amount, empty merchant, future date.
+- A request without the API key returns `401`.
+- A backdated expense appears under the matching range tab and not under a shorter one.
+- Pure logic (schema and date resolution) has unit tests with `node:test`, run by `npm test`.
 - A new category name appears in `GET /api/categories`.
 - The expense appears in `GET /api/expenses`, in the summary total, and in the CSV export.
 - A bank webhook insert still works after migration 007.
