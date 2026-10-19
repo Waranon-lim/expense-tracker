@@ -239,3 +239,4 @@ button.cat-row.filterable:hover .cat-name { text-decoration: underline; }
 #add-new-category { margin-top: 8px; }
 .add-error { margin: 0 0 12px; color: var(--pink); font-size: 0.85rem; }
 .add-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.add-dialog [hidden], #add-new-category[hidden] { display: none; }
