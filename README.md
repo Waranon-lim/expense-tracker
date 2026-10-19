@@ -80,10 +80,15 @@ under `migrations/`.
 
 ```bash
 npm run mock-bank    # simulate an incoming bank webhook from the CLI
+npm test             # run the unit tests
 ```
 
 The dashboard also has a built-in "+ Simulate Transaction" button that does
 the same thing without needing the CLI.
+
+To add an expense by hand, use the "Add expense" button. Choose a merchant,
+amount, category and date. The expense is saved as categorized at once. The
+button calls `POST /api/expenses`, which needs the `x-api-key` header.
 
 ## Checking things are running
 
