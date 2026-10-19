@@ -2,10 +2,12 @@ import crypto from 'node:crypto';
 import { Router } from 'express';
 import { pool } from '../db/pool';
 import { CategorizeRequestSchema } from '../validation/categorizeSchema';
+import { ManualExpenseRequestSchema } from '../validation/manualExpenseSchema';
+import { createManualExpense } from '../services/createManualExpense';
 import { finalizeCategory, recategorizeExpense } from '../services/categorizationFinalizer';
 import { loadMerchantRules, suggestCategory } from '../services/merchantRules';
 import { ingestTransaction } from '../services/ingestTransaction';
-import { bangkokRangeStart, bucketKeys, granularityForRange, isExpenseRange } from '../utils/bangkokTime';
+import { bangkokRangeStart, bucketKeys, granularityForRange, isExpenseRange, resolveManualExpenseDate } from '../utils/bangkokTime';
 import { asyncHandler } from '../utils/asyncHandler';
 import { requireApiKey } from '../middleware/requireApiKey';
 import { verifyNotificationToken } from '../services/pushNotifications';
@@ -140,6 +142,37 @@ expensesRouter.get(
         topCategory: (topCategoryResult.rows[0]?.category as string) ?? null,
       },
     });
+  }),
+);
+
+// Dashboard "Add expense" form: the user types an expense in by hand. It is
+// saved as categorized at once, so it never enters the pending tap lane.
+expensesRouter.post(
+  '/',
+  requireApiKey,
+  asyncHandler(async (req, res) => {
+    const parsed = ManualExpenseRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Invalid request', details: parsed.error.flatten() });
+      return;
+    }
+
+    const when = resolveManualExpenseDate(parsed.data.date);
+    if (!when) {
+      res.status(400).json({ error: 'Date cannot be in the future' });
+      return;
+    }
+
+    const expense = await createManualExpense(pool, {
+      userId: DEMO_USER_ID,
+      merchant: parsed.data.merchant,
+      amount: parsed.data.amount,
+      currency: parsed.data.currency,
+      category: parsed.data.category,
+      when,
+    });
+
+    res.status(201).json(expense);
   }),
 );
 
