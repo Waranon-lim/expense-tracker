@@ -106,6 +106,16 @@ const manageCategoriesToggleEl = $('manage-categories-toggle');
 const manageCategoriesEl = $('manage-categories');
 const refreshBtnEl = $('refresh-btn');
 const simulateBtnEl = $('simulate-btn');
+const addBtnEl = $('add-btn');
+const addDialogEl = $('add-dialog');
+const addFormEl = $('add-form');
+const addMerchantEl = $('add-merchant');
+const addAmountEl = $('add-amount');
+const addCategoriesEl = $('add-categories');
+const addNewCategoryEl = $('add-new-category');
+const addDateEl = $('add-date');
+const addErrorEl = $('add-error');
+const addSaveEl = $('add-save');
 const exportBtnEl = $('export-btn');
 const overviewAmountEl = $('overview-amount');
 const overviewSentenceEl = $('overview-sentence');
@@ -358,7 +368,7 @@ function bindNode(node, item) {
   const sig =
     item.type === 'head'
       ? `${item.label}|${item.total}`
-      : `${item.key}|${item.expanded}|${item.expense.category}|${item.expense.amount}|${allCategories.map((c) => c.name).join(',')}`;
+      : `${item.key}|${item.expanded}|${item.expense.category}|${item.expense.amount}|${item.expense.source}|${allCategories.map((c) => c.name).join(',')}`;
   node.style.height = `${item.height}px`;
   if (node.dataset.sig === sig) return;
   node.dataset.sig = sig;
@@ -374,7 +384,7 @@ function bindNode(node, item) {
     <div class="expense-main">
       <div class="merchant">${escapeHtml(e.merchant)}</div>
       <div class="meta-row"><span class="dot" style="background:${colorFor(e.category)}"></span>${escapeHtml(e.category)}
-        <span aria-hidden="true">&middot;</span> ${formatTime(e.received_at)}</div>
+        <span aria-hidden="true">&middot;</span> ${e.source === 'manual' ? 'Manual' : formatTime(e.received_at)}</div>
     </div>
     <div class="expense-amount">&minus;${formatAmount(e)}</div>
     <button class="link-btn change-btn" data-id="${e.id}" type="button" aria-expanded="${item.expanded}">Change</button>
@@ -953,6 +963,91 @@ simulateBtnEl.addEventListener('click', async () => {
     statusEl.textContent = 'Could not simulate a payment. Check the API key.';
   } finally {
     simulateBtnEl.disabled = false;
+  }
+});
+
+// ---------- add expense (manual entry) ----------
+
+let addSelectedCategory = '';
+
+function showAddError(message) {
+  addErrorEl.textContent = message;
+  addErrorEl.hidden = !message;
+}
+
+// Category chips come from the master list, plus "+ New" for a name that does
+// not exist yet. Built once per open, not on every refresh tick.
+function renderAddCategories() {
+  addCategoriesEl.innerHTML = '';
+  const choices = [...allCategories.map((c) => ({ value: c.name, label: c.name, color: c.color })), { value: CUSTOM_PILL, label: '+ New', color: null }];
+  for (const choice of choices) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'category-pill';
+    btn.dataset.value = choice.value;
+    btn.setAttribute('aria-pressed', String(choice.value === addSelectedCategory));
+    btn.innerHTML = `${choice.color ? `<span class="dot" style="background:${choice.color}"></span>` : ''}${escapeHtml(choice.label)}`;
+    btn.addEventListener('click', () => {
+      addSelectedCategory = choice.value;
+      addNewCategoryEl.hidden = choice.value !== CUSTOM_PILL;
+      if (choice.value === CUSTOM_PILL) addNewCategoryEl.focus();
+      addCategoriesEl.querySelectorAll('.category-pill').forEach((p) => {
+        p.setAttribute('aria-pressed', String(p.dataset.value === addSelectedCategory));
+      });
+    });
+    addCategoriesEl.appendChild(btn);
+  }
+}
+
+function openAddDialog() {
+  addFormEl.reset();
+  addSelectedCategory = '';
+  addNewCategoryEl.hidden = true;
+  showAddError('');
+  const today = bangkokDayKey(new Date().toISOString());
+  addDateEl.value = today;
+  addDateEl.max = today;
+  renderAddCategories();
+  addDialogEl.showModal();
+  addMerchantEl.focus();
+}
+
+addBtnEl.addEventListener('click', openAddDialog);
+$('add-cancel').addEventListener('click', () => addDialogEl.close());
+
+addFormEl.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const merchant = addMerchantEl.value.trim();
+  const amount = Number(addAmountEl.value);
+  const category = addSelectedCategory === CUSTOM_PILL ? addNewCategoryEl.value.trim() : addSelectedCategory;
+
+  if (!merchant) return showAddError('Enter the merchant.');
+  if (!(amount > 0)) return showAddError('Enter an amount greater than 0.');
+  if (!category) return showAddError('Choose a category.');
+  if (!addDateEl.value) return showAddError('Choose a date.');
+  showAddError('');
+
+  addSaveEl.disabled = true;
+  try {
+    const res = await apiKeyFetch('/api/expenses', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ merchant, amount, category, date: addDateEl.value }),
+    });
+    if (res.status === 401) throw new Error('The API key was not accepted. Try again.');
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error === 'Date cannot be in the future' ? 'The date cannot be in the future.' : 'The expense was not saved. Check the values and try again.');
+    }
+    addDialogEl.close();
+    statusEl.textContent = `Added ${merchant}`;
+    await refreshCategories();
+    await refresh();
+  } catch (err) {
+    console.error(err);
+    showAddError(err.message);
+  } finally {
+    addSaveEl.disabled = false;
   }
 });
 

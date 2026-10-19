@@ -20,6 +20,7 @@
         <span id="status" class="status" role="status"></span>
         <button id="refresh-btn" class="icon-btn" type="button" title="Refresh now" aria-label="Refresh now">&#8635;</button>
         <button id="notify-btn" class="btn-quiet" type="button" hidden>Phone alerts</button>
+        <button id="add-btn" class="btn" type="button">Add expense</button>
         <button id="simulate-btn" class="btn" type="button">Simulate payment</button>
       </div>
     </header>
@@ -75,6 +76,30 @@
       <p id="empty-message" class="empty-state" hidden>No payments match these filters. Try a longer time range or clear the search.</p>
     </section>
   </main>
+  <dialog id="add-dialog" class="add-dialog" aria-labelledby="add-title">
+    <form id="add-form" novalidate>
+      <h2 id="add-title">Add expense</h2>
+      <label class="field">Merchant
+        <input id="add-merchant" type="text" maxlength="100" autocomplete="off" required />
+      </label>
+      <label class="field">Amount (THB)
+        <input id="add-amount" type="number" inputmode="decimal" min="0.01" step="0.01" required />
+      </label>
+      <fieldset class="field">
+        <legend>Category</legend>
+        <div id="add-categories" class="add-categories"></div>
+        <input id="add-new-category" type="text" maxlength="40" placeholder="New category name" autocomplete="off" hidden />
+      </fieldset>
+      <label class="field">Date
+        <input id="add-date" type="date" required />
+      </label>
+      <p id="add-error" class="add-error" role="alert" hidden></p>
+      <div class="add-actions">
+        <button id="add-cancel" class="btn-quiet" type="button">Cancel</button>
+        <button id="add-save" class="btn" type="submit">Save</button>
+      </div>
+    </form>
+  </dialog>
   <script src="app.js"></script>
 </body>
 </html>
