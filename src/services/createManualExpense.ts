@@ -23,7 +23,7 @@ export async function createManualExpense(pool: Pool, params: CreateManualExpens
     await client.query('BEGIN');
 
     // Same registration as a tap: a new name becomes a permanent quick-pick.
-    const category = await registerCategory(client, params.category);
+    const category = await registerCategory(client, params.userId, params.category);
 
     const result = await client.query(
       `INSERT INTO expenses (

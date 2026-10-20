@@ -11,18 +11,18 @@ export interface FinalizeResult {
 }
 
 
-// Registers the category (or reuses one that only differs in case/whitespace,
-// e.g. "food" vs "Food") so it shows up as a quick-pick option and in the
-// filter dropdown. The categories_name_lower_idx unique index makes this
-// atomic under concurrent first-time inserts of the same name.
-export async function registerCategory(client: PoolClient, rawCategory: string): Promise<string> {
+// Registers the category for this user (or reuses one that only differs in
+// case/whitespace, e.g. "food" vs "Food") so it shows up as a quick-pick option
+// and in the filter dropdown. The categories_user_name_lower_idx unique index
+// makes this atomic under concurrent first-time inserts of the same name.
+export async function registerCategory(client: PoolClient, userId: string, rawCategory: string): Promise<string> {
   const trimmedCategory = rawCategory.trim();
   const result = await client.query(
-    `INSERT INTO categories (name, color)
-     VALUES ($1, $2)
-     ON CONFLICT (lower(trim(name))) DO UPDATE SET name = categories.name
+    `INSERT INTO categories (user_id, name, color)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (user_id, lower(trim(name))) DO UPDATE SET name = categories.name
      RETURNING name`,
-    [trimmedCategory, colorForCategoryName(trimmedCategory)],
+    [userId, trimmedCategory, colorForCategoryName(trimmedCategory)],
   );
   return result.rows[0].name as string;
 }
@@ -42,7 +42,7 @@ export async function recategorizeExpense(
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const category = await registerCategory(client, rawCategory);
+    const category = await registerCategory(client, userId, rawCategory);
     const result = await client.query(
       `UPDATE expenses
        SET category = $1, category_source = 'user', updated_at = now()
@@ -69,18 +69,37 @@ export async function recategorizeExpense(
  * Finalizes a pending expense's category. Guarded by `WHERE status = 'pending'` so
  * whichever caller gets here first (a user tap, or the timeout sweep) wins the race —
  * the loser's UPDATE just affects zero rows instead of overwriting the winner.
+ *
+ * The category is registered for the expense's own user, which is read from the
+ * pending row (and locked with FOR UPDATE, so a tap and the sweep take turns).
+ * `ownerUserId` is passed by routes that act for a signed-in user: an expense of
+ * another user then counts as "not found". The sweep and the phone-alert route
+ * leave it out.
  */
 export async function finalizeCategory(
   pool: Pool,
   expenseId: number,
   rawCategory: string,
   source: Exclude<CategorySource, null>,
+  ownerUserId?: string,
 ): Promise<FinalizeResult> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
-    const category = await registerCategory(client, rawCategory);
+    const pending = await client.query(
+      `SELECT user_id FROM expenses
+       WHERE id = $1 AND status = 'pending' AND ($2::text IS NULL OR user_id = $2)
+       FOR UPDATE`,
+      [expenseId, ownerUserId ?? null],
+    );
+    if (pending.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return { applied: false, expenseId };
+    }
+    const userId = pending.rows[0].user_id as string;
+
+    const category = await registerCategory(client, userId, rawCategory);
 
     const expenseResult = await client.query(
       `UPDATE expenses
