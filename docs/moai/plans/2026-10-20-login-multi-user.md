@@ -1389,9 +1389,10 @@ assert 'DEMO_USER_ID' in s
 s = s.replace('DEMO_USER_ID', 'req.userId')
 
 # 5. /:id/categorize must only touch the signed-in user's expense.
-#    The same finalizeCategory line also appears in the phone-alert route, so change the FIRST one only.
-old = "const { applied, category } = await finalizeCategory(pool, id, parsed.data.category, 'user');"
-new = "const { applied, category } = await finalizeCategory(pool, id, parsed.data.category, 'user', req.userId);"
+#    That route reads the body into `parseResult`. The phone-alert route (further down) uses `parsed`
+#    and must NOT get the owner argument (it has no signed-in user).
+old = "const { applied, category } = await finalizeCategory(pool, id, parseResult.data.category, 'user');"
+new = "const { applied, category } = await finalizeCategory(pool, id, parseResult.data.category, 'user', req.userId);"
 s = replace_once(s, old, new)
 s = replace_once(s, "const existing = await pool.query('SELECT status FROM expenses WHERE id = $1', [id]);",
                     "const existing = await pool.query('SELECT status FROM expenses WHERE id = $1 AND user_id = $2', [id, req.userId]);")

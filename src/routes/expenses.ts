@@ -250,7 +250,7 @@ expensesRouter.post(
       return;
     }
 
-    const { applied, category } = await finalizeCategory(pool, id, parseResult.data.category, 'user');
+    const { applied, category } = await finalizeCategory(pool, id, parseResult.data.category, 'user', req.userId);
 
     if (!applied) {
       const existing = await pool.query('SELECT status FROM expenses WHERE id = $1 AND user_id = $2', [id, req.userId]);
@@ -309,7 +309,7 @@ expensesRouter.post(
       res.status(400).json({ error: 'Invalid request' });
       return;
     }
-    const { applied, category } = await finalizeCategory(pool, id, parsed.data.category, 'user', req.userId);
+    const { applied, category } = await finalizeCategory(pool, id, parsed.data.category, 'user');
     if (!applied) {
       res.status(409).json({ error: 'Expense is already categorized' });
       return;
