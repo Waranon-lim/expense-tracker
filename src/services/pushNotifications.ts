@@ -38,6 +38,7 @@ export function signNotificationToken(expenseId: number | string): string {
 }
 
 export function verifyNotificationToken(expenseId: number | string, token: string): boolean {
+  if (!process.env.NOTIFICATION_SECRET) return false;
   const expected = Buffer.from(signNotificationToken(expenseId));
   const provided = Buffer.from(token);
   return expected.length === provided.length && crypto.timingSafeEqual(expected, provided);

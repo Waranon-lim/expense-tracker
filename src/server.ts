@@ -15,6 +15,9 @@ import { categorizationTimeoutMs } from './constants';
 import { startCategorizationSweep } from './jobs/categorizationSweep';
 
 dotenv.config();
+if (!process.env.NOTIFICATION_SECRET) {
+  console.warn('[push] NOTIFICATION_SECRET is not set: the phone-alert buttons are disabled. Set it in .env (openssl rand -hex 32).');
+}
 
 const app = express();
 
