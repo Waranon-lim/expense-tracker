@@ -17,60 +17,15 @@ function fallbackColorForName(name) {
   return `hsl(${Math.abs(hash) % 360}, 65%, 45%)`;
 }
 
-const API_KEY_STORAGE_KEY = 'expense_tracker_api_key';
-
-// The dashboard's own mutating endpoints (simulate/categorize/delete-category)
-// require the same shared key configured server-side as DASHBOARD_API_KEY.
-// Prompt for it once and cache in localStorage rather than baking it into
-// this static file — it's a single-user local tool, not a login system.
-function getApiKey() {
-  let key = null;
-  try {
-    key = localStorage.getItem(API_KEY_STORAGE_KEY);
-  } catch {
-    // Storage unavailable (private browsing, etc.) — fall through to prompting.
-  }
-  if (!key) {
-    key = window.prompt('Enter the dashboard API key (server’s DASHBOARD_API_KEY):');
-    if (key) {
-      try {
-        localStorage.setItem(API_KEY_STORAGE_KEY, key);
-      } catch {
-        // Not fatal — the key still gets sent on this request, just not cached.
-      }
-    }
-  }
-  return key;
-}
-
-// fetch() wrapper for the API-key-protected endpoints. Clears the cached key
-// on a 401 so the next mutating action re-prompts instead of looping on a
-// stale/wrong key forever. Also clears it if the key itself is unusable as a
-// header value (e.g. it has a non-ASCII character from a stray IME keystroke
-// when it was typed in) — fetch() throws synchronously in that case, before
-// any request is even sent, so a 401 would never happen to trigger the clear.
-async function apiKeyFetch(url, options = {}) {
-  const key = getApiKey();
-  let res;
-  try {
-    res = await fetch(url, {
-      ...options,
-      headers: { ...(options.headers ?? {}), 'x-api-key': key ?? '' },
-    });
-  } catch (err) {
-    try {
-      localStorage.removeItem(API_KEY_STORAGE_KEY);
-    } catch {
-      // ignore
-    }
-    throw err;
-  }
+// fetch() for every call that needs a signed-in user. The browser sends the
+// session cookie by itself. If the session is gone (401) the page goes to the
+// sign-in page, and the returned promise never settles so callers do not show
+// a confusing error while the page is leaving.
+async function authFetch(url, options = {}) {
+  const res = await fetch(url, options);
   if (res.status === 401) {
-    try {
-      localStorage.removeItem(API_KEY_STORAGE_KEY);
-    } catch {
-      // ignore
-    }
+    window.location.href = '/login.html';
+    return new Promise(() => {});
   }
   return res;
 }
@@ -282,7 +237,7 @@ async function categorize(id, category, scope) {
   });
 
   try {
-    const res = await apiKeyFetch(`/api/expenses/${id}/categorize`, {
+    const res = await authFetch(`/api/expenses/${id}/categorize`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ category }),
@@ -292,7 +247,7 @@ async function categorize(id, category, scope) {
     }
   } catch (err) {
     console.error(err);
-    statusEl.textContent = 'Could not save the category. Check the API key and try again.';
+    statusEl.textContent = 'Could not save the category. Try again.';
   } finally {
     // The timeout sweep can beat the tap, so always re-fetch the real state.
     await refreshCategories();
@@ -489,7 +444,7 @@ async function changeCategory(id, category, rowEl) {
     el.disabled = true;
   });
   try {
-    const res = await apiKeyFetch(`/api/expenses/${id}/category`, {
+    const res = await authFetch(`/api/expenses/${id}/category`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ category }),
@@ -498,7 +453,7 @@ async function changeCategory(id, category, rowEl) {
     statusEl.textContent = `Changed to ${category}. Future payments from this shop will follow.`;
   } catch (err) {
     console.error(err);
-    statusEl.textContent = 'Could not change the category. Check the API key and try again.';
+    statusEl.textContent = 'Could not change the category. Try again.';
   } finally {
     lastChartSig = ''; // force chart redraw: category totals changed
     await refreshCategories();
@@ -727,7 +682,7 @@ function exportCsv() {
 
 async function refreshCategories() {
   try {
-    const res = await fetch('/api/categories');
+    const res = await authFetch('/api/categories');
     if (!res.ok) return;
     allCategories = await res.json();
 
@@ -752,7 +707,7 @@ async function refreshCategories() {
 
 async function refreshRules() {
   try {
-    const res = await fetch('/api/rules');
+    const res = await authFetch('/api/rules');
     if (!res.ok) return;
     renderRules(await res.json());
   } catch (err) {
@@ -777,7 +732,7 @@ function renderRules(rules) {
     btn.addEventListener('click', async () => {
       btn.disabled = true;
       try {
-        const res = await apiKeyFetch(`/api/rules/${encodeURIComponent(btn.dataset.key)}`, { method: 'DELETE' });
+        const res = await authFetch(`/api/rules/${encodeURIComponent(btn.dataset.key)}`, { method: 'DELETE' });
         if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
         await refreshRules();
         await refresh();
@@ -836,7 +791,7 @@ function renderManageCategories() {
       const body = { color: colorInput.value };
       if (nameInput.value.trim() !== row.dataset.name) body.name = nameInput.value.trim();
       try {
-        const res = await apiKeyFetch(`/api/categories/${row.dataset.id}`, {
+        const res = await authFetch(`/api/categories/${row.dataset.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
@@ -862,7 +817,7 @@ function renderManageCategories() {
     btn.addEventListener('click', async () => {
       btn.disabled = true;
       try {
-        const res = await apiKeyFetch(`/api/categories/${btn.dataset.id}`, { method: 'DELETE' });
+        const res = await authFetch(`/api/categories/${btn.dataset.id}`, { method: 'DELETE' });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           throw new Error(body.error ?? `Delete failed: ${res.status}`);
@@ -886,7 +841,7 @@ async function refresh() {
     if (currentCategory) params.set('category', currentCategory);
     if (currentSearch) params.set('q', currentSearch);
 
-    const res = await fetch(`/api/expenses?${params.toString()}`);
+    const res = await authFetch(`/api/expenses?${params.toString()}`);
     if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
     const { expenses, summary, chart, timeoutMs, serverNow } = await res.json();
 
@@ -952,7 +907,7 @@ refreshBtnEl.addEventListener('click', async () => {
 simulateBtnEl.addEventListener('click', async () => {
   simulateBtnEl.disabled = true;
   try {
-    const res = await apiKeyFetch('/api/expenses/simulate', { method: 'POST' });
+    const res = await authFetch('/api/expenses/simulate', { method: 'POST' });
     if (!res.ok) throw new Error(`Simulate failed: ${res.status}`);
     const { merchant } = await res.json();
     statusEl.textContent = `New payment from ${merchant}`;
@@ -960,7 +915,7 @@ simulateBtnEl.addEventListener('click', async () => {
     await refresh();
   } catch (err) {
     console.error(err);
-    statusEl.textContent = 'Could not simulate a payment. Check the API key.';
+    statusEl.textContent = 'Could not simulate a payment. Try again.';
   } finally {
     simulateBtnEl.disabled = false;
   }
@@ -1029,12 +984,11 @@ addFormEl.addEventListener('submit', async (e) => {
 
   addSaveEl.disabled = true;
   try {
-    const res = await apiKeyFetch('/api/expenses', {
+    const res = await authFetch('/api/expenses', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ merchant, amount, category, date: addDateEl.value }),
     });
-    if (res.status === 401) throw new Error('The API key was not accepted. Try again.');
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error === 'Date cannot be in the future' ? 'The date cannot be in the future.' : 'The expense was not saved. Check the values and try again.');
@@ -1059,6 +1013,31 @@ function scheduleRefresh() {
     scheduleRefresh();
   }, REFRESH_INTERVAL_MS);
 }
+
+// ---------- signed-in user ----------
+
+const userEmailEl = $('user-email');
+const signoutBtnEl = $('signout-btn');
+
+async function showSignedInUser() {
+  // authFetch sends a signed-out visitor to the sign-in page.
+  const res = await authFetch('/api/auth/me');
+  if (!res.ok) return;
+  const me = await res.json();
+  userEmailEl.textContent = me.email;
+  userEmailEl.title = me.email;
+}
+
+signoutBtnEl.addEventListener('click', async () => {
+  signoutBtnEl.disabled = true;
+  try {
+    await fetch('/api/auth/logout', { method: 'POST' });
+  } finally {
+    window.location.href = '/login.html';
+  }
+});
+
+showSignedInUser();
 
 refreshCategories().then(refresh);
 scheduleRefresh();
@@ -1102,7 +1081,7 @@ async function setupNotifications() {
     try {
       const existing = await reg.pushManager.getSubscription();
       if (existing && Notification.permission === 'granted') {
-        await apiKeyFetch('/api/push/unsubscribe', {
+        await authFetch('/api/push/unsubscribe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ endpoint: existing.endpoint }),
@@ -1123,7 +1102,7 @@ async function setupNotifications() {
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(key),
         });
-        const res = await apiKeyFetch('/api/push/subscribe', {
+        const res = await authFetch('/api/push/subscribe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(sub.toJSON()),

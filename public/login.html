@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign in</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="auth-page">
+  <main>
+    <form id="auth-form" class="auth-card" novalidate>
+      <h1 id="auth-title">Sign in</h1>
+      <p id="auth-sub" class="auth-sub">Welcome back. Sign in to see your expenses.</p>
+
+      <label class="auth-field">Email
+        <input id="auth-email" type="email" autocomplete="username" required />
+      </label>
+      <label class="auth-field">Password
+        <input id="auth-password" type="password" autocomplete="current-password" minlength="8" required />
+      </label>
+      <label class="auth-remember">
+        <input id="auth-remember" type="checkbox" />
+        Remember me for 30 days
+      </label>
+
+      <p id="auth-error" class="auth-error" role="alert" hidden></p>
+      <button id="auth-submit" class="btn auth-submit" type="submit">Sign in</button>
+      <p class="auth-switch">
+        <span id="auth-switch-text">No account yet?</span>
+        <button id="auth-switch-btn" class="link-btn" type="button">Create account</button>
+      </p>
+    </form>
+  </main>
+  <script src="auth.js"></script>
+</body>
+</html>

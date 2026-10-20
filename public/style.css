@@ -240,3 +240,19 @@ button.cat-row.filterable:hover .cat-name { text-decoration: underline; }
 .add-error { margin: 0 0 12px; color: var(--pink); font-size: 0.85rem; }
 .add-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .add-dialog [hidden], #add-new-category[hidden] { display: none; }
+
+/* ---------- sign-in page ---------- */
+.auth-page main { max-width: 380px; margin: 12vh auto 0; padding: 0 16px; }
+.auth-card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 24px; }
+.auth-card h1 { margin: 0 0 4px; font-size: 1.3rem; }
+.auth-sub { margin: 0 0 18px; color: var(--muted); font-size: 0.9rem; }
+.auth-field { display: block; margin-bottom: 14px; font-size: 0.85rem; color: var(--muted); }
+.auth-field input[type="email"], .auth-field input[type="password"] {
+  display: block; width: 100%; margin-top: 4px; padding: 8px 10px; font: inherit; color: var(--ink);
+  border: 1px solid var(--line-strong); border-radius: 8px; background: var(--paper);
+}
+.auth-remember { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; font-size: 0.85rem; color: var(--ink); }
+.auth-error { margin: 0 0 12px; color: var(--pink); font-size: 0.85rem; }
+.auth-submit { width: 100%; padding: 9px 12px; }
+.auth-switch { margin: 14px 0 0; text-align: center; font-size: 0.85rem; color: var(--muted); }
+.user-email { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
