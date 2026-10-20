@@ -154,6 +154,15 @@ async function main() {
   const catsB2 = await call('GET', '/api/categories', { cookie: cookieB });
   check('user B still has ISO Test Cat', (catsB2.body ?? []).some((c: any) => c.name === 'ISO Test Cat'), catsB2.body);
 
+  // user B cannot touch user A's rule or category
+  check('user B gets 404 deleting user A\'s rule', (await call('DELETE', '/api/rules/legacy%20test%20coffee', { cookie: cookieB })).status === 404);
+  const rulesA2 = await call('GET', '/api/rules', { cookie: cookieA });
+  check('user A still has the legacy rule', (rulesA2.body ?? []).some((r: any) => r.merchant_key === 'legacy test coffee'), rulesA2.body);
+  const catsA3 = await call('GET', '/api/categories', { cookie: cookieA });
+  const isoRenamedA = (catsA3.body ?? []).find((c: any) => c.name === 'ISO Renamed');
+  check('user A has the renamed category', !!isoRenamedA, catsA3.body);
+  check('user B gets 404 editing user A\'s category', (await call('PATCH', `/api/categories/${isoRenamedA?.id}`, { cookie: cookieB, body: { color: '#112233' } })).status === 404);
+
   // --- bank webhook ---
   const hook = await signedWebhook('usr_demo_1');
   check('webhook for usr_demo_1 gives 200 pending', hook.status === 200 && hook.body?.status === 'pending', hook);
@@ -163,6 +172,16 @@ async function main() {
   const listB3 = await call('GET', '/api/expenses?range=day', { cookie: cookieB });
   check('user B does not see it', !(listB3.body?.expenses ?? []).some((e: any) => String(e.id) === String(hookId)));
   check('user B cannot categorize it (404)', (await call('POST', `/api/expenses/${hookId}/categorize`, { cookie: cookieB, body: { category: 'Food' } })).status === 404);
+  const hook2 = await signedWebhook('usr_demo_1');
+  const hook2Id = hook2.body?.expense_id;
+  check('a second webhook gives 200 pending', hook2.status === 200 && hook2.body?.status === 'pending', hook2);
+  const secret = process.env.SMOKE_NOTIFICATION_SECRET ?? 'test-secret';
+  const goodToken = crypto.createHmac('sha256', 'notification-token:' + secret).update(String(hook2Id)).digest('hex');
+  const notifyPath = `/api/expenses/${hook2Id}/categorize-from-notification`;
+  const badTry = await call('POST', notifyPath, { body: { category: 'Transport' }, headers: { 'x-notification-token': 'wrong-token' } });
+  check('phone-alert route with a wrong token gives 401', badTry.status === 401, badTry.status);
+  const goodTry = await call('POST', notifyPath, { body: { category: 'Transport' }, headers: { 'x-notification-token': goodToken } });
+  check('phone-alert route with the right token categorizes', goodTry.status === 200 && goodTry.body?.status === 'categorized', goodTry);
   check('user A can categorize it', (await call('POST', `/api/expenses/${hookId}/categorize`, { cookie: cookieA, body: { category: 'Food' } })).status === 200);
 
   // --- rate limit (an email that has no account, so no other check is affected) ---
@@ -172,6 +191,14 @@ async function main() {
     attempts.push((await call('POST', '/api/auth/login', { body: { email: limitEmail, password: 'wrong password' } })).status);
   }
   check('5 failed logins give 401 and the 6th gives 429', JSON.stringify(attempts) === JSON.stringify([401, 401, 401, 401, 401, 429]), attempts);
+
+  // --- rate limit under parallel requests ---
+  const parEmail = `par-${suffix}@example.com`;
+  const parStatuses = await Promise.all(
+    Array.from({ length: 20 }, () => call('POST', '/api/auth/login', { body: { email: parEmail, password: 'wrong password' } }).then((r) => r.status)),
+  );
+  const count = (code: number) => parStatuses.filter((x) => x === code).length;
+  check('parallel failed logins: only 5 get through', count(401) === 5 && count(429) === 15, parStatuses);
 
   // --- logout ---
   const logout = await call('POST', '/api/auth/logout', { cookie: loginCookieA });

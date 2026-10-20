@@ -125,4 +125,4 @@ Browser check: sign up, sign out, sign in, remember me, a second account in a pr
 
 ## Out of scope
 
-Password reset by email, email verification, change password, delete account, sign-in with Google, two-factor sign-in, an admin screen, and separate phone-alert handling when two users share one browser (the subscription belongs to whoever subscribed last on that device). Each can be a later step.
+Password reset by email, email verification, change password, delete account, sign-in with Google, two-factor sign-in, an admin screen, and separate phone-alert handling when two users share one browser (the subscription belongs to whoever subscribed last on that device). Each can be a later step. Before the app is put behind a proxy, set Express "trust proxy" so the login limit sees real client addresses, and consider limiting by address range as well as by email plus address.
