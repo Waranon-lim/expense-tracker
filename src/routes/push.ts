@@ -2,8 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { pool } from '../db/pool';
 import { asyncHandler } from '../utils/asyncHandler';
-import { requireApiKey } from '../middleware/requireApiKey';
-import { DEMO_USER_ID } from '../constants';
+import { requireUser } from '../middleware/requireUser';
 import { vapidPublicKey } from '../services/pushNotifications';
 
 export const pushRouter = Router();
@@ -14,6 +13,7 @@ const SubscriptionSchema = z.object({
 });
 
 // The browser needs this public key to create a subscription tied to this server.
+// It is public on purpose: it is not a secret.
 pushRouter.get('/public-key', (_req, res) => {
   const key = vapidPublicKey();
   if (!key) {
@@ -23,9 +23,10 @@ pushRouter.get('/public-key', (_req, res) => {
   res.status(200).json({ key });
 });
 
+// A device (endpoint) belongs to whoever subscribed last on it.
 pushRouter.post(
   '/subscribe',
-  requireApiKey,
+  requireUser,
   asyncHandler(async (req, res) => {
     const parsed = SubscriptionSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -36,7 +37,7 @@ pushRouter.post(
     await pool.query(
       `INSERT INTO push_subscriptions (endpoint, user_id, p256dh, auth) VALUES ($1, $2, $3, $4)
        ON CONFLICT (endpoint) DO UPDATE SET user_id = EXCLUDED.user_id, p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth`,
-      [endpoint, DEMO_USER_ID, keys.p256dh, keys.auth],
+      [endpoint, req.userId, keys.p256dh, keys.auth],
     );
     res.status(201).json({ subscribed: true });
   }),
@@ -44,10 +45,10 @@ pushRouter.post(
 
 pushRouter.post(
   '/unsubscribe',
-  requireApiKey,
+  requireUser,
   asyncHandler(async (req, res) => {
     const endpoint = typeof req.body?.endpoint === 'string' ? req.body.endpoint : '';
-    await pool.query('DELETE FROM push_subscriptions WHERE endpoint = $1 AND user_id = $2', [endpoint, DEMO_USER_ID]);
+    await pool.query('DELETE FROM push_subscriptions WHERE endpoint = $1 AND user_id = $2', [endpoint, req.userId]);
     res.status(200).json({ subscribed: false });
   }),
 );

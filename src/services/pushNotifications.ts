@@ -22,13 +22,15 @@ export function vapidPublicKey(): string | null {
   return ensureConfigured() ? (process.env.VAPID_PUBLIC_KEY as string) : null;
 }
 
-// The notification's buttons are clicked inside a service worker, which can't
-// see the dashboard's API key. So each push carries a token that is valid for
-// exactly one thing: categorizing THAT expense. It's an HMAC of the expense id,
-// so it can't be forged or reused on another expense, and the route also
-// refuses anything that isn't still pending.
+// The notification's buttons are clicked inside a service worker, which has no
+// signed-in session. So each push carries a token that is valid for exactly one
+// thing: categorizing THAT expense. It's an HMAC of the expense id, so it can't
+// be forged or reused on another expense, and the route also refuses anything
+// that isn't still pending. NOTIFICATION_SECRET (in .env) is the HMAC key.
 function tokenSecret(): string {
-  return `notification-token:${process.env.DASHBOARD_API_KEY ?? ''}`;
+  const secret = process.env.NOTIFICATION_SECRET;
+  if (!secret) throw new Error('NOTIFICATION_SECRET is not configured');
+  return `notification-token:${secret}`;
 }
 
 export function signNotificationToken(expenseId: number | string): string {

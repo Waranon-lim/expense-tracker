@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { pool } from '../db/pool';
 import { BankWebhookPayloadSchema } from '../validation/webhookSchema';
 import { ingestTransaction } from '../services/ingestTransaction';
+import { userExists } from '../services/users';
 
 export const webhookRouter = Router();
 
@@ -16,6 +17,13 @@ webhookRouter.post('/bank-sync', async (req, res) => {
   const payload = parseResult.data;
 
   try {
+    // The bank names a user. Only ids that have an account are accepted, and an
+    // unknown id stores nothing (no ledger row, no expense).
+    if (!(await userExists(pool, payload.user_id))) {
+      res.status(404).json({ error: 'Unknown user' });
+      return;
+    }
+
     const result = await ingestTransaction(pool, {
       provider: PROVIDER,
       providerTransactionId: payload.transaction_id,

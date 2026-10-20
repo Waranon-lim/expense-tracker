@@ -9,9 +9,9 @@ import { loadMerchantRules, suggestCategory } from '../services/merchantRules';
 import { ingestTransaction } from '../services/ingestTransaction';
 import { bangkokRangeStart, bucketKeys, granularityForRange, isExpenseRange, resolveManualExpenseDate } from '../utils/bangkokTime';
 import { asyncHandler } from '../utils/asyncHandler';
-import { requireApiKey } from '../middleware/requireApiKey';
+import { requireUser } from '../middleware/requireUser';
 import { verifyNotificationToken } from '../services/pushNotifications';
-import { DEMO_USER_ID, categorizationTimeoutMs } from '../constants';
+import { categorizationTimeoutMs } from '../constants';
 
 export const expensesRouter = Router();
 
@@ -59,9 +59,10 @@ const LIST_FILTER_WHERE = `
 
 expensesRouter.get(
   '/',
+  requireUser,
   asyncHandler(async (req, res) => {
     const { range, rangeStart, category, q } = parseListFilters(req);
-    const params = [DEMO_USER_ID, rangeStart, category, q];
+    const params = [req.userId, rangeStart, category, q];
     const granularity = granularityForRange(range);
     const bucketFormat = { hour: 'YYYY-MM-DD"T"HH24', day: 'YYYY-MM-DD', month: 'YYYY-MM' }[granularity];
 
@@ -114,7 +115,7 @@ expensesRouter.get(
 
     // suggested_category isn't persisted for pending rows (only computed at
     // webhook time and thrown away) so recompute it here for display.
-    const rules = await loadMerchantRules(pool, DEMO_USER_ID);
+    const rules = await loadMerchantRules(pool, req.userId);
     const expenses = result.rows.map((row) => {
       if (row.status !== 'pending') {
         return row;
@@ -149,7 +150,7 @@ expensesRouter.get(
 // saved as categorized at once, so it never enters the pending tap lane.
 expensesRouter.post(
   '/',
-  requireApiKey,
+  requireUser,
   asyncHandler(async (req, res) => {
     const parsed = ManualExpenseRequestSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -164,7 +165,7 @@ expensesRouter.post(
     }
 
     const expense = await createManualExpense(pool, {
-      userId: DEMO_USER_ID,
+      userId: req.userId,
       merchant: parsed.data.merchant,
       amount: parsed.data.amount,
       currency: parsed.data.currency,
@@ -181,7 +182,7 @@ expensesRouter.post(
 // so it goes through the same pending -> tap-or-timeout-sweep flow.
 expensesRouter.post(
   '/simulate',
-  requireApiKey,
+  requireUser,
   asyncHandler(async (req, res) => {
     const pick = SIMULATED_MERCHANTS[Math.floor(Math.random() * SIMULATED_MERCHANTS.length)];
     const amount = randomAmount(pick.minAmount, pick.maxAmount);
@@ -189,7 +190,7 @@ expensesRouter.post(
     const result = await ingestTransaction(pool, {
       provider: 'ui_simulator',
       providerTransactionId: `sim_${crypto.randomUUID()}`,
-      userId: DEMO_USER_ID,
+      userId: req.userId,
       amount,
       currency: 'THB',
       merchantName: pick.merchant,
@@ -214,6 +215,7 @@ expensesRouter.post(
 
 expensesRouter.get(
   '/:id',
+  requireUser,
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) {
@@ -221,7 +223,7 @@ expensesRouter.get(
       return;
     }
 
-    const result = await pool.query('SELECT * FROM expenses WHERE id = $1 AND user_id = $2', [id, DEMO_USER_ID]);
+    const result = await pool.query('SELECT * FROM expenses WHERE id = $1 AND user_id = $2', [id, req.userId]);
     if (result.rowCount === 0) {
       res.status(404).json({ error: 'Expense not found' });
       return;
@@ -234,7 +236,7 @@ expensesRouter.get(
 // Simulates the user tapping a category on the push-notification prompt.
 expensesRouter.post(
   '/:id/categorize',
-  requireApiKey,
+  requireUser,
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) {
@@ -251,7 +253,7 @@ expensesRouter.post(
     const { applied, category } = await finalizeCategory(pool, id, parseResult.data.category, 'user');
 
     if (!applied) {
-      const existing = await pool.query('SELECT status FROM expenses WHERE id = $1', [id]);
+      const existing = await pool.query('SELECT status FROM expenses WHERE id = $1 AND user_id = $2', [id, req.userId]);
       if (existing.rowCount === 0) {
         res.status(404).json({ error: 'Expense not found' });
         return;
@@ -269,7 +271,7 @@ expensesRouter.post(
 // pending one is changed through the normal tap route instead.
 expensesRouter.patch(
   '/:id/category',
-  requireApiKey,
+  requireUser,
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) {
@@ -281,7 +283,7 @@ expensesRouter.patch(
       res.status(400).json({ error: 'Invalid request', details: parsed.error.flatten() });
       return;
     }
-    const { applied, category } = await recategorizeExpense(pool, id, DEMO_USER_ID, parsed.data.category);
+    const { applied, category } = await recategorizeExpense(pool, id, req.userId, parsed.data.category);
     if (!applied) {
       res.status(404).json({ error: 'No filed expense with that id' });
       return;
@@ -307,7 +309,7 @@ expensesRouter.post(
       res.status(400).json({ error: 'Invalid request' });
       return;
     }
-    const { applied, category } = await finalizeCategory(pool, id, parsed.data.category, 'user');
+    const { applied, category } = await finalizeCategory(pool, id, parsed.data.category, 'user', req.userId);
     if (!applied) {
       res.status(409).json({ error: 'Expense is already categorized' });
       return;

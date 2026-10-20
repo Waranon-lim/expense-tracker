@@ -23,6 +23,8 @@ People sign in with email and password. Each user sees only their own expenses, 
 | Categories | Per user. New accounts get Food, Transport and Other as defaults. |
 | Bank webhooks | The payload `user_id` must match a user id. An unknown id gets `404` and nothing is stored. |
 | New packages | None. Cookie parsing and the rate limiter are small local helpers. |
+| Phone-alert token secret | A new `NOTIFICATION_SECRET` setting in `.env` replaces `DASHBOARD_API_KEY` as the key that signs the per-expense alert token. |
+| Pure session helpers | `src/services/sessionToken.ts` holds the token functions that need no database, so they have unit tests. |
 
 ## Database
 
