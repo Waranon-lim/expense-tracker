@@ -1028,9 +1028,27 @@ async function showSignedInUser() {
   userEmailEl.title = me.email;
 }
 
+// A shared device must stop getting this user's alerts after sign-out.
+async function unsubscribePushOnThisDevice() {
+  try {
+    const registration = await navigator.serviceWorker?.getRegistration();
+    const subscription = await registration?.pushManager.getSubscription();
+    if (!subscription) return;
+    await fetch('/api/push/unsubscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint: subscription.endpoint }),
+    });
+    await subscription.unsubscribe();
+  } catch (err) {
+    console.error(err);
+  }
+}
+
 signoutBtnEl.addEventListener('click', async () => {
   signoutBtnEl.disabled = true;
   try {
+    await unsubscribePushOnThisDevice();
     await fetch('/api/auth/logout', { method: 'POST' });
   } finally {
     window.location.href = '/login.html';
