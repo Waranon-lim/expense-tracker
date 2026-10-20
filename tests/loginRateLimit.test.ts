@@ -39,4 +39,13 @@ describe('loginRateLimiter', () => {
     for (let i = 0; i < 5; i++) limiter.recordFailure('a');
     assert.equal(limiter.isBlocked('b'), false);
   });
+
+  it('forgets expired keys when it grows large', () => {
+    let time = 0;
+    const limiter = createLoginRateLimiter({ now: () => time, maxEntries: 3 });
+    for (const key of ['a', 'b', 'c']) limiter.recordFailure(key);
+    time = WINDOW + 1;
+    limiter.recordFailure('d');
+    assert.equal(limiter.size(), 1);
+  });
 });

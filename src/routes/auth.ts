@@ -61,6 +61,10 @@ authRouter.post(
       res.status(429).json({ error: 'Too many failed attempts. Try again in 15 minutes.' });
       return;
     }
+    // Count the attempt BEFORE the slow password check. This check and the count
+    // run in one step, so many parallel requests cannot all slip past the limit
+    // while the first ones are still hashing. A successful login clears the count.
+    loginRateLimiter.recordFailure(limitKey);
 
     const user = await findUserByEmail(pool, email);
     let passwordOk = false;
@@ -71,7 +75,6 @@ authRouter.post(
     }
 
     if (!user || !passwordOk) {
-      loginRateLimiter.recordFailure(limitKey);
       res.status(401).json({ error: WRONG_LOGIN });
       return;
     }
