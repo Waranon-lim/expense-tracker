@@ -7,6 +7,7 @@ import { createSession, deleteSession } from '../services/sessions';
 import { countUsers, createUser, findUserByEmail } from '../services/users';
 import { SESSION_COOKIE, buildClearCookie, buildSessionCookie, parseCookies } from '../utils/cookies';
 import { loginRateLimiter } from '../utils/loginRateLimit';
+import { isSignupOpen } from '../utils/signupSetting';
 import { LoginSchema, SignupSchema } from '../validation/authSchema';
 
 export const authRouter = Router();
@@ -29,7 +30,7 @@ authRouter.post(
 
     // ALLOW_SIGNUP=false closes sign-up, but the very first account must always
     // be possible, otherwise nobody could ever sign in.
-    if (process.env.ALLOW_SIGNUP === 'false' && (await countUsers(pool)) > 0) {
+    if (!isSignupOpen(process.env.ALLOW_SIGNUP) && (await countUsers(pool)) > 0) {
       res.status(403).json({ error: 'Sign-up is closed' });
       return;
     }
