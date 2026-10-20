@@ -8,6 +8,7 @@ import { webhookRouter } from './routes/webhook';
 import { expensesRouter } from './routes/expenses';
 import { categoriesRouter } from './routes/categories';
 import { rulesRouter } from './routes/rules';
+import { authRouter } from './routes/auth';
 import { pushRouter } from './routes/push';
 import { pool } from './db/pool';
 import { categorizationTimeoutMs } from './constants';
@@ -34,6 +35,7 @@ app.get('/health', (_req, res) => {
 });
 
 app.use('/api/webhooks', verifyWebhookSignature, webhookRouter);
+app.use('/api/auth', authRouter);
 app.use('/api/expenses', expensesRouter);
 app.use('/api/categories', categoriesRouter);
 app.use('/api/rules', rulesRouter);
